@@ -503,16 +503,6 @@
         </div>
 
         <div class="card" style="margin-top: 30px;">
-            <h3>Cargar Imágenes (PDF Catálogo)</h3>
-            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
-                Sube el PDF que contiene las imágenes (ej: "Distribuidora Belgrano Corregido.pdf"). La app vinculará las imágenes con los productos ya cargados.
-            </p>
-            <input type="file" id="pdf-image-upload" accept="application/pdf">
-            <button class="btn" id="btn-process-img-pdf" onclick="processImagePDF()" style="background-color: var(--secondary-color); color: #000;">Extraer y Vincular Imágenes</button>
-            <p id="pdf-image-status" style="margin-top: 15px; color: var(--primary-color); font-size: 0.9rem; font-weight: bold;"></p>
-        </div>
-
-        <div class="card" style="margin-top: 30px;">
             <h3>Instalación</h3>
             <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
                 Agrega esta app a tu pantalla de inicio para usarla como una aplicación nativa.
@@ -1198,7 +1188,7 @@
                         statusDiv.style.color = "var(--text-muted)";
                         statusDiv.textContent = 'Buscando PDF de imágenes ("Distribuidora Belgrano Corregido.pdf")...';
                         try {
-                            const res = await fetch('/Distribuidora%20Belgrano%20Corregido.pdf');
+                            const res = await fetch('Distribuidora%20Belgrano%20Corregido.pdf');
                             if (res.ok) {
                                 const arrBuf = await res.arrayBuffer();
                                 statusDiv.textContent = 'PDF encontrado, extrayendo imágenes...';
