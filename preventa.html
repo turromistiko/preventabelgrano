@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Preventa Móvil</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Preventa">
+    
+    <!-- PWA Manifest Injection Point -->
+    <link rel="manifest" id="pwa-manifest">
+    
+    <!-- PDF.js para procesar archivos PDF localmente -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    
+    <style>
+        /* Mobile-First Dark Mode Variables */
+        :root {
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --surface-dark: #111827;
+            --primary-color: #6366f1;
+            --success-color: #10b981;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --danger-color: #ef4444;
+            --border-radius: 16px;
+        }
+
+        /* Base Resets */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding-bottom: 80px; /* Space for bottom nav */
+            overscroll-behavior-y: none;
+        }
+
+        /* App Header */
+        .app-header {
+            background-color: var(--surface-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            padding: 16px 24px;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .app-header h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        /* View Management */
+        .view {
+            display: none;
+            padding: 16px;
+            animation: fadeIn 0.3s ease;
+        }
+        .view.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* General UI Elements */
+        .card {
+            background-color: var(--surface-color);
+            border-radius: var(--border-radius);
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: none;
+            border: 1px solid var(--border-color);
+        }
+
+        h2, h3 { margin-bottom: 12px; }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background-color: var(--surface-dark);
+            color: var(--text-main);
+            font-size: 1rem;
+            margin-bottom: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+            appearance: none;
+        }
+        input:focus, textarea:focus, select:focus {
+            border-color: var(--primary-color);
+        }
+
+        .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 16px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: transform 0.1s, opacity 0.2s;
+            box-shadow: none;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn:disabled { background-color: var(--border-color); color: var(--text-muted); }
+        
+        .btn-danger {
+            background-color: #2a1b1b;
+            color: var(--danger-color);
+            border: 1px solid #4a2b2b;
+        }
+
+        button[onclick="generateOrder()"] {
+            background-color: #25d366;
+            color: white;
+        }
+
+        /* Catalog Layout */
+        .search-container {
+            position: sticky;
+            top: 56px;
+            z-index: 99;
+            background: var(--surface-dark);
+            padding: 16px;
+            margin: -16px -16px 16px -16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .category-chips {
+            display: flex;
+            overflow-x: auto;
+            gap: 8px;
+            padding-bottom: 4px;
+            scrollbar-width: none; /* Firefox */
+        }
+        .category-chips::-webkit-scrollbar { display: none; /* Chrome/Safari */ }
+        
+        .chip {
+            background-color: var(--surface-color);
+            color: var(--text-main);
+            padding: 8px 16px;
+            border-radius: 20px;
+            white-space: nowrap;
+            font-size: 13px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .chip.active {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 600;
+            border-color: var(--primary-color);
+        }
+
+        #catalog-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+            align-content: start;
+        }
+
+        .product-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-radius: 12px;
+        }
+        
+        #catalog-list .product-card {
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 12px 14px;
+            gap: 8px;
+            border-radius: 16px;
+            position: relative;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            transition: transform 0.1s;
+            margin-bottom: 0;
+            box-shadow: none;
+        }
+        #catalog-list .product-card:active { transform: scale(0.98); }
+
+        #cart-list .product-card {
+            border-left: 4px solid var(--primary-color);
+            margin-bottom: 8px;
+        }
+
+        .product-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+        }
+        
+        #catalog-list .product-cat { font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-family: monospace; }
+        #catalog-list .product-code { font-size: 10px; color: var(--text-muted); font-family: monospace; }
+        #catalog-list .product-name { font-size: 14px; font-weight: 600; line-height: 1.2; height: 34px; overflow: hidden; }
+        #catalog-list .product-price { font-size: 18px; font-weight: 700; color: var(--success-color); margin-top: 4px;}
+
+        /* Fallbacks for non-catalog uses (like cart inline styles) */
+        .product-cat { font-size: 0.75rem; color: var(--primary-color); text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;}
+        .product-code { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 2px;}
+        .product-name { font-size: 1.05rem; font-weight: 600; line-height: 1.2; }
+        .product-price { font-size: 1.15rem; font-weight: bold; color: var(--text-main); margin-top: 2px;}
+        
+        .btn-add {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            width: 44px;
+            height: 44px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: none;
+        }
+
+        /* Cart View */
+        .cart-totals {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--surface-color);
+            padding: 20px;
+            border-radius: var(--border-radius);
+            margin-bottom: 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: none;
+        }
+        .cart-totals .total-price {
+            font-size: 24px;
+            color: var(--success-color);
+            font-weight: 800;
+        }
+        
+        .cart-item-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--bg-color);
+            padding: 4px 8px;
+            border-radius: 8px;
+        }
+        .cart-item-controls button {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-main);
+            border: none;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .cart-item-controls button:active { background: var(--surface-color); }
+        .cart-item-controls span {
+            font-weight: bold;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background-color: var(--surface-color);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 1000;
+            padding-bottom: env(safe-area-inset-bottom); /* iOS support */
+        }
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            flex: 1;
+            height: 100%;
+            cursor: pointer;
+            gap: 4px;
+            transition: color 0.2s;
+        }
+        .nav-item.active {
+            color: var(--primary-color);
+        }
+        .nav-item svg {
+            width: 24px;
+            height: 24px;
+            fill: currentColor;
+        }
+        
+        .badge {
+            position: absolute;
+            top: 8px;
+            margin-left: 20px;
+            background-color: var(--danger-color);
+            color: white;
+            border-radius: 10px;
+            padding: 2px 6px;
+            font-size: 0.65rem;
+            font-weight: bold;
+            border: 2px solid var(--surface-color);
+            display: none;
+        }
+
+        /* History Items */
+        .history-card { border-left: 4px solid var(--primary-color); }
+        .history-date { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
+        .history-card h3 { color: var(--success-color) !important; }
+        
+        /* Toast Notification */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: var(--danger-color);
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1000;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            box-shadow: 0px 4px 6px rgba(0,0,0,0.3);
+        }
+        #toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+        @keyframes fadein {
+            from {bottom: 0; opacity: 0;}
+            to {bottom: 30px; opacity: 1;}
+        }
+        @keyframes fadeout {
+            from {bottom: 30px; opacity: 1;}
+            to {bottom: 0; opacity: 0;}
+        }
+
+        /* Empty States */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            grid-column: 1 / -1;
+        }
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            fill: var(--border-color);
+            margin-bottom: 16px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="app-header">
+        <h1 id="header-title">Preventa Móvil</h1>
+    </header>
+
+    <!-- VIEWS -->
+    
+    <!-- 1. Catalog View -->
+    <main id="view-catalog" class="view active">
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="🔍 Buscar producto o código..." oninput="handleSearch()">
+            <div class="category-chips" id="category-chips">
+                <!-- Injected via JS -->
+            </div>
+        </div>
+        
+        <div id="catalog-list">
+            <div class="empty-state">
+                <p>Cargando catálogo...</p>
+            </div>
+        </div>
+        <button id="btn-load-more" class="btn" style="display:none; background:var(--surface-color); color:var(--primary-color);" onclick="loadMoreCatalog()">
+            Cargar más productos
+        </button>
+    </main>
+
+    <!-- 2. Cart View -->
+    <main id="view-cart" class="view">
+        <div class="cart-totals">
+            <div>
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Unidades Totales</p>
+                <p id="cart-units" style="font-size: 1.2rem; font-weight: bold;">0</p>
+            </div>
+            <div style="text-align: right;">
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Total del Pedido</p>
+                <p class="total-price">$<span id="cart-total">0</span></p>
+            </div>
+        </div>
+
+        <button class="btn btn-danger" onclick="clearCart()" style="margin-bottom: 16px;">Limpiar Carrito</button>
+
+        <div id="cart-list" style="margin-bottom: 20px;">
+            <!-- Cart items injected via JS -->
+        </div>
+
+        <div class="card" id="client-form-container">
+            <h3>Información del Cliente</h3>
+            <input type="text" id="client-name" placeholder="Nombre completo / Local (Requerido)">
+            <input type="text" id="client-address" placeholder="Dirección de entrega (Requerido)">
+            <input type="tel" id="client-phone" placeholder="Teléfono (Opcional)">
+            <select id="client-day">
+                <option value="" disabled selected>Día de entrega (Opcional)</option>
+                <option value="Lunes">Lunes</option>
+                <option value="Martes">Martes</option>
+                <option value="Miércoles">Miércoles</option>
+                <option value="Jueves">Jueves</option>
+                <option value="Viernes">Viernes</option>
+                <option value="Sábado">Sábado</option>
+                <option value="Domingo">Domingo</option>
+            </select>
+        </div>
+
+        <button class="btn" onclick="generateOrder()" style="margin-bottom: 20px;">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+            Generar Pedido y Enviar
+        </button>
+    </main>
+
+    <!-- 3. History View -->
+    <main id="view-history" class="view">
+        <h2 style="margin-bottom: 20px;">Pedidos Guardados</h2>
+        
+        <div class="cart-totals" style="margin-bottom: 20px; padding: 16px;">
+            <span style="font-weight: 600; color: var(--text-muted); font-size: 1.1rem;">Total Vendido Hoy:</span>
+            <span class="total-price" id="daily-total" style="font-size: 1.5rem;">$0</span>
+        </div>
+
+        <div id="history-list">
+            <!-- Order history injected via JS -->
+        </div>
+    </main>
+
+    <!-- 4. Settings/Admin View -->
+    <main id="view-settings" class="view">
+        <div class="card">
+            <h3>Actualizar Catálogo (PDF)</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
+                Carga la lista de precios en PDF. La app extraerá categorías, productos y precios automáticamente.
+            </p>
+            <input type="file" id="pdf-upload" accept="application/pdf">
+            <button class="btn" id="btn-process-pdf" onclick="processPDF()">Procesar PDF (Extraer Datos)</button>
+            <p id="pdf-status" style="margin-top: 15px; color: var(--primary-color); font-size: 0.9rem; font-weight: bold;"></p>
+        </div>
+
+        <div class="card" style="margin-top: 30px;">
+            <h3>Instalación</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
+                Agrega esta app a tu pantalla de inicio para usarla como una aplicación nativa.
+            </p>
+            <button class="btn" id="btn-install-pwa" onclick="installPWA()" style="background-color: var(--success-color);">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14zm-1.5 2h-7v-1h7v1z"/></svg>
+                Agregar a Inicio
+            </button>
+        </div>
+
+        <div class="card" style="margin-top: 30px;">
+            <h3>Base de Datos Local</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
+                Toda la información se guarda localmente en tu dispositivo para lectura offline.
+            </p>
+            <button class="btn btn-danger" onclick="clearData()">⚠️ Eliminar todos los datos (Reset)</button>
+        </div>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <button class="nav-item active" onclick="navigate('catalog')" id="nav-catalog">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+            Catálogo
+        </button>
+        <button class="nav-item" style="position: relative;" onclick="navigate('cart')" id="nav-cart">
+            <svg viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+            Carrito
+            <span class="badge" id="cart-badge">0</span>
+        </button>
+        <button class="nav-item" onclick="navigate('history')" id="nav-history">
+            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+            Historial
+        </button>
+        <button class="nav-item" onclick="navigate('settings')" id="nav-settings">
+            <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 C9.66,21.59,9.86,21.76,10.1,21.76h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+            Ajustes
+        </button>
+    </nav>
+
+    <!-- Toast Component -->
+    <div id="toast">Notificación</div>
+
+    <!-- application logic -->
+    <script>
+        /* === PWA Registration Dynamic === */
+        (function initPWA() {
+            // Dynamic Manifest
+            const manifest = {
+                name: "Preventa Móvil",
+                short_name: "Preventa",
+                start_url: ".",
+                display: "standalone",
+                background_color: "#121212",
+                theme_color: "#25D366",
+                description: "Aplicación de preventa y gestión de pedidos.",
+                icons: [{
+                    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2325D366'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z'/%3E%3C/svg%3E",
+                    sizes: "192x192 512x512",
+                    type: "image/svg+xml",
+                    purpose: "any maskable"
+                }]
+            };
+            const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
+            document.getElementById('pwa-manifest').href = URL.createObjectURL(manifestBlob);
+
+            // Dynamic Service Worker configuration for offline support
+            const swCode = `
+                const CACHE_NAME = 'preventa-cache-v1';
+                self.addEventListener('install', e => { 
+                    self.skipWaiting(); 
+                });
+                self.addEventListener('activate', e => {
+                    e.waitUntil(clients.claim());
+                });
+                self.addEventListener('fetch', e => {
+                    e.respondWith(
+                        fetch(e.request).catch(() => {
+                            if(e.request.mode === 'navigate') {
+                                return caches.match('/');
+                            }
+                            return new Response("Offline mode", {status: 200});
+                        })
+                    );
+                });
+            `;
+            if ('serviceWorker' in navigator) {
+                const swBlob = new Blob([swCode], {type: 'application/javascript'});
+                navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(err => console.log('SW config ready.'));
+            }
+        })();
+
+        /* === Configure PDF.js === */
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        function showToast(msg, bg = 'var(--danger-color)') {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.style.backgroundColor = bg;
+            toast.className = "show";
+            setTimeout(function(){ toast.className = toast.className.replace("show", ""); }, 3000);
+        }
+
+        /* === App State Management === */
+        const DB_KEY = 'preventa_database';
+        let db = {
+            catalog: [],
+            categories: [],
+            cart: [],
+            history: [],
+            clients: [] // To hold frequent clients (future use / auto-complete logic)
+        };
+
+        // UI State
+        let activeCategory = 'Todas';
+        let searchQuery = '';
+        let renderLimit = 50;
+
+        function initApp() {
+            const saved = localStorage.getItem(DB_KEY);
+            if (saved) {
+                try {
+                    db = JSON.parse(saved);
+                } catch(e) { console.error('Error parsing local DB', e); }
+            }
+            if (!db.catalog) db.catalog = [];
+            if (!db.categories) db.categories = [];
+            if (!db.cart) db.cart = [];
+            if (!db.history) db.history = [];
+            
+            updateCartBadge();
+            renderCatalogView();
+            renderCartView();
+        }
+
+        function saveDB() {
+            localStorage.setItem(DB_KEY, JSON.stringify(db));
+            updateCartBadge();
+        }
+
+        /* === Navigation === */
+        function navigate(viewId) {
+            // Hide all
+            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            // Show targeted
+            document.getElementById('view-' + viewId).classList.add('active');
+            document.getElementById('nav-' + viewId).classList.add('active');
+            
+            // Titles
+            const titles = {
+                catalog: 'Catálogo de Productos',
+                cart: 'Carrito de Pedido',
+                history: 'Historial de Pedidos',
+                settings: 'Ajustes del Sistema'
+            };
+            document.getElementById('header-title').textContent = titles[viewId];
+            window.scrollTo(0, 0);
+
+            // Trigger targeted view logic
+            if (viewId === 'catalog') renderCatalogView();
+            if (viewId === 'cart') renderCartView();
+            if (viewId === 'history') renderHistoryView();
+        }
+
+        /* === Catalog Viewer & Render === */
+        function getFilteredCatalog() {
+            let list = db.catalog;
+            if (activeCategory !== 'Todas') {
+                list = list.filter(p => p.category === activeCategory);
+            }
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                list = list.filter(p => (p.name.toLowerCase().includes(q) || p.code.includes(q)));
+            }
+            return list;
+        }
+
+        function renderCatalogView() {
+            renderCategoriesContainer();
+            renderCatalogItems(true);
+        }
+
+        function handleSearch() {
+            searchQuery = document.getElementById('search-input').value.trim();
+            renderCatalogItems(true);
+        }
+
+        function setCategory(cat) {
+            activeCategory = cat;
+            renderCategoriesContainer();
+            renderCatalogItems(true);
+        }
+
+        function renderCategoriesContainer() {
+            const container = document.getElementById('category-chips');
+            if (db.categories.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            let html = `<div class="chip ${activeCategory === 'Todas' ? 'active' : ''}" onclick="setCategory('Todas')">Todas</div>`;
+            db.categories.forEach(cat => {
+                const isActive = activeCategory === cat ? 'active' : '';
+                html += `<div class="chip ${isActive}" onclick="setCategory('${cat}')">${cat}</div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function renderCatalogItems(resetLimit = false) {
+            if (resetLimit) renderLimit = 50;
+            const container = document.getElementById('catalog-list');
+            const btnMore = document.getElementById('btn-load-more');
+            
+            if (db.catalog.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 9h-2V7h-2v5H6v2h2v5h2v-5h2v-2z"/></svg>
+                        <p>No hay productos. Ve a Ajustes y carga un Catálogo PDF.</p>
+                    </div>`;
+                btnMore.style.display = 'none';
+                return;
+            }
+
+            const filtered = getFilteredCatalog();
+            const itemsToRender = filtered.slice(0, renderLimit);
+            
+            if (itemsToRender.length === 0) {
+                container.innerHTML = '<p style="text-align:center; margin-top:20px; color:var(--text-muted)">No se encontraron resultados.</p>';
+                btnMore.style.display = 'none';
+                return;
+            }
+
+            let html = '';
+            itemsToRender.forEach(p => {
+                html += `
+                <div class="card product-card">
+                    <div class="product-info">
+                        <span class="product-code">#${p.code}</span>
+                        <h3 class="product-name">${p.name}</h3>
+                        <span class="product-cat">${p.category}</span>
+                        <p class="product-price">$${p.price.toLocaleString('es-AR')}</p>
+                    </div>
+                    <button class="btn-add" onclick="addToCart('${p.code}')">+</button>
+                </div>`;
+            });
+            
+            container.innerHTML = html;
+            
+            if (filtered.length > renderLimit) {
+                btnMore.style.display = 'block';
+            } else {
+                btnMore.style.display = 'none';
+            }
+        }
+
+        function loadMoreCatalog() {
+            renderLimit += 50;
+            renderCatalogItems();
+        }
+
+        /* === Cart Management === */
+        function addToCart(code) {
+            const product = db.catalog.find(p => p.code === code);
+            if (!product) return;
+
+            const existingIndex = db.cart.findIndex(i => i.code === code);
+            if (existingIndex >= 0) {
+                db.cart[existingIndex].qty += 1;
+            } else {
+                db.cart.push({ ...product, qty: 1 });
+            }
+            saveDB();
+            
+            // Visual feedback on badge
+            const badge = document.getElementById('cart-badge');
+            badge.style.transform = 'scale(1.5)';
+            setTimeout(() => badge.style.transform = 'scale(1)', 200);
+            
+            // Optional mini toast toast can be added here
+        }
+
+        function updateCartQty(index, delta) {
+            db.cart[index].qty += delta;
+            if (db.cart[index].qty <= 0) {
+                db.cart.splice(index, 1);
+            }
+            saveDB();
+            renderCartView();
+        }
+
+        function updateCartBadge() {
+            const badge = document.getElementById('cart-badge');
+            const totalItems = db.cart.reduce((sum, i) => sum + i.qty, 0);
+            if (totalItems > 0) {
+                badge.style.display = 'block';
+                badge.textContent = totalItems;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function renderCartView() {
+            const container = document.getElementById('cart-list');
+            const unitsEl = document.getElementById('cart-units');
+            const totalEl = document.getElementById('cart-total');
+            const formContainer = document.getElementById('client-form-container');
+
+            if (db.cart.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                        <p>Tu carrito está vacío.</p>
+                        <button class="btn" style="margin-top:15px; width:auto; display:inline-block;" onclick="navigate('catalog')">Ir al Catálogo</button>
+                    </div>`;
+                unitsEl.textContent = '0';
+                totalEl.textContent = '0';
+                formContainer.style.display = 'none';
+                return;
+            }
+
+            formContainer.style.display = 'block';
+            let html = '';
+            let totalUnits = 0;
+            let totalPrice = 0;
+
+            db.cart.forEach((item, index) => {
+                totalUnits += item.qty;
+                const subtotal = item.qty * item.price;
+                totalPrice += subtotal;
+
+                html += `
+                <div class="card product-card">
+                    <div class="product-info">
+                        <h4 style="margin:0; font-size:1rem;">${item.name}</h4>
+                        <p style="margin:0; font-size:0.85rem; color:var(--text-muted);">$${item.price.toLocaleString('es-AR')} c/u</p>
+                        <p style="margin:2px 0 0; font-weight:bold; color:var(--success-color);">Subtotal: $${subtotal.toLocaleString('es-AR')}</p>
+                    </div>
+                    <div class="cart-item-controls">
+                        <button onclick="updateCartQty(${index}, -1)">-</button>
+                        <span>${item.qty}</span>
+                        <button onclick="updateCartQty(${index}, 1)">+</button>
+                    </div>
+                </div>`;
+            });
+
+            container.innerHTML = html;
+            unitsEl.textContent = totalUnits;
+            totalEl.textContent = totalPrice.toLocaleString('es-AR', {minimumFractionDigits: 2});
+        }
+
+        function clearCart() {
+            db.cart = [];
+            saveDB();
+            renderCartView();
+            updateCartBadge();
+            showToast('Carrito vaciado', 'var(--success-color)');
+        }
+
+        function generateOrder() {
+            if (db.cart.length === 0) return;
+
+            const name = document.getElementById('client-name').value.trim();
+            const address = document.getElementById('client-address').value.trim();
+            const phone = document.getElementById('client-phone').value.trim();
+            const day = document.getElementById('client-day').value;
+
+            if (!name || !address) {
+                showToast('⚠️ El nombre y la dirección son obligatorios.');
+                return;
+            }
+
+            let totalPrice = db.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+            
+            // Format WhatsApp Message exactly as requested
+            let msg = `📦 *PEDIDO*\n`;
+            msg += `👤 Cliente: ${name}\n`;
+            msg += `📍 Dirección: ${address}\n`;
+            if (phone) msg += `📞 Teléfono: ${phone}\n`;
+            if (day) msg += `📆 Día de entrega: ${day}\n\n`;
+            
+            msg += `🛒 *Productos:*\n`;
+            db.cart.forEach(item => {
+                const subtotal = item.qty * item.price;
+                msg += `• ${item.name} x${item.qty} = $${subtotal.toLocaleString('es-AR')}\n`;
+            });
+            
+            msg += `\n💰 *Total: $${totalPrice.toLocaleString('es-AR')}*\n`;
+            msg += `\nGracias.`;
+
+            // Save order history
+            const newOrder = {
+                id: Date.now(),
+                date: new Date().toLocaleString('es-AR'),
+                clientName: name,
+                clientAddress: address,
+                total: totalPrice,
+                items: JSON.parse(JSON.stringify(db.cart))
+            };
+            db.history.unshift(newOrder); // Add to top
+            
+            // Clear current cart and form
+            db.cart = [];
+            saveDB();
+            
+            document.getElementById('client-name').value = '';
+            document.getElementById('client-address').value = '';
+            document.getElementById('client-phone').value = '';
+            document.getElementById('client-day').value = '';
+            
+            // Automatically switch to history
+            navigate('history');
+            
+            // Dispatch link to WhatsApp
+            const waUrlMobile = `whatsapp://send?text=${encodeURIComponent(msg)}`;
+            const waUrlWeb = `https://web.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+            
+            try {
+                window.location.href = waUrlMobile;
+                // Fallback to web if scheme fails
+                setTimeout(() => {
+                    window.open(waUrlWeb, '_blank');
+                }, 2000);
+            } catch (e) {
+                window.open(waUrlWeb, '_blank');
+            }
+        }
+
+        /* === History View === */
+        function renderHistoryView() {
+            const container = document.getElementById('history-list');
+            const dailyTotalElement = document.getElementById('daily-total');
+            
+            // Calculate today's total
+            const todayStr = new Date().toLocaleDateString('es-AR');
+            const dailyTotal = db.history.reduce((sum, order) => {
+                if (order.date) {
+                    const orderDateStr = order.date.split(',')[0].trim();
+                    // Some browsers might omit the comma, so let's fallback to spaces just in case
+                    const fallbackDateStr = order.date.split(' ')[0].trim();
+                    if (orderDateStr === todayStr || fallbackDateStr === todayStr) {
+                        return sum + (order.total || 0);
+                    }
+                }
+                return sum;
+            }, 0);
+            
+            if (dailyTotalElement) {
+                dailyTotalElement.textContent = `$${dailyTotal.toLocaleString('es-AR', {minimumFractionDigits: 2})}`;
+            }
+
+            if (db.history.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+                        <p>No tienes pedidos guardados en el historial.</p>
+                    </div>`;
+                return;
+            }
+
+            let html = '';
+            db.history.forEach((order, index) => {
+                html += `
+                <div class="card history-card">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <p class="history-date">${order.date}</p>
+                            <h4 style="margin:0; font-size:1.1rem; color:var(--text-main);">${order.clientName}</h4>
+                            <p style="margin:2px 0; font-size:0.85rem; color:var(--text-muted);">${order.clientAddress}</p>
+                        </div>
+                        <h3 style="color:var(--primary-color); margin:0;">$${order.total.toLocaleString('es-AR')}</h3>
+                    </div>
+                    <div style="margin-top:12px; font-size:0.85rem; color:var(--text-muted);">
+                        ${order.items.length} productos diferentes.
+                    </div>
+                    <div style="margin-top:12px; display:flex; gap:10px;">
+                        <button class="btn" style="padding:8px; font-size:0.9rem;" onclick="repeatOrder(${index})">Repetir Pedido</button>
+                        <button class="btn btn-danger" style="padding:8px; font-size:0.9rem;" onclick="deleteOrder(${index})">Eliminar</button>
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function repeatOrder(index) {
+            const order = db.history[index];
+            db.cart = JSON.parse(JSON.stringify(order.items)); // Deep copy items
+            
+            // Prefill fields
+            document.getElementById('client-name').value = order.clientName || '';
+            document.getElementById('client-address').value = order.clientAddress || '';
+            
+            saveDB();
+            navigate('cart');
+            showToast('Productos cargados al carrito', 'var(--success-color)');
+        }
+
+        function deleteOrder(index) {
+            db.history.splice(index, 1);
+            saveDB();
+            renderHistoryView();
+            showToast('Pedido eliminado del historial', 'var(--success-color)');
+        }
+
+        /* === PDF Processing Engine === */
+        async function processPDF() {
+            const fileInput = document.getElementById('pdf-upload');
+            const statusDiv = document.getElementById('pdf-status');
+            const btn = document.getElementById('btn-process-pdf');
+            
+            if (!fileInput.files.length) {
+                showToast('⚠️ Selecciona un archivo PDF primero.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            btn.disabled = true;
+            btn.textContent = 'Procesando PDF... (Por favor, espera)';
+            statusDiv.textContent = 'Leyendo estructura del archivo...';
+            statusDiv.style.color = "var(--text-muted)";
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                const totalPages = pdf.numPages;
+                
+                const catalog = [];
+                let currentCategory = 'CATÁLOGO GENERAL';
+                
+                // Match format: "900101 ACTRON 400 TIRA (2t) -$ 3.410,40-" or any typical variation.
+                // Group 1: code, Group 2: name, Group 3: price
+                const regexProduct = /^(\d+)\s+(.*?)[-$\s]+([\d\.,]+)[-\s]*$/;
+
+                for (let i = 1; i <= totalPages; i++) {
+                    statusDiv.textContent = `Procesando página ${i} de ${totalPages}...`;
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    
+                    // Group text elements mathematically by exact Y row axis with tolerance
+                    let linesMap = {};
+                    textContent.items.forEach(item => {
+                        let y = item.transform[5];
+                        let matchedY = Object.keys(linesMap).find(key => Math.abs(Number(key) - y) < 5);
+                        if (matchedY) {
+                            linesMap[matchedY].push({ x: item.transform[4], str: item.str });
+                        } else {
+                            linesMap[y] = [{ x: item.transform[4], str: item.str }];
+                        }
+                    });
+                    
+                    // Iterate top-down (Higher Y is top of the page in PDF space)
+                    let sortedY = Object.keys(linesMap).map(Number).sort((a,b) => b - a);
+                    
+                    for (let y of sortedY) {
+                        // Reconstruct horizontal line from left to right
+                        let lineItems = linesMap[y].sort((a,b) => a.x - b.x);
+                        let lineText = lineItems.map(i => i.str.trim()).filter(Boolean).join(' ');
+                        lineText = lineText.replace(/\s+/g, ' ').trim(); // strict normalization
+                        
+                        const match = lineText.match(regexProduct);
+                        if (match) {
+                            const [, code, name, priceStr] = match;
+                            
+                            let priceFloatStr = priceStr;
+                            if (priceFloatStr.includes(',') && priceFloatStr.includes('.')) {
+                                if (priceFloatStr.lastIndexOf(',') > priceFloatStr.lastIndexOf('.')) {
+                                    priceFloatStr = priceFloatStr.replace(/\./g, '').replace(',', '.');
+                                } else {
+                                    priceFloatStr = priceFloatStr.replace(/,/g, '');
+                                }
+                            } else if (priceFloatStr.includes(',')) {
+                                priceFloatStr = priceFloatStr.replace(',', '.');
+                            } else if (priceFloatStr.includes('.')) {
+                                let parts = priceFloatStr.split('.');
+                                if (parts.length > 1 && parts[parts.length - 1].length === 3) {
+                                    priceFloatStr = priceFloatStr.replace(/\./g, '');
+                                }
+                            }
+                            
+                            const price = parseFloat(priceFloatStr);
+                            
+                            if (!isNaN(price) && name.trim()) {
+                                catalog.push({ 
+                                    code, 
+                                    name: name.trim(), 
+                                    price: price, 
+                                    category: currentCategory 
+                                });
+                            }
+                        } else if (lineText.length > 2 && lineText.length < 50 && !lineText.includes('#VALUE!') && !/^\d+/.test(lineText)) {
+                            // If it's a short, valid string without leading numbers, it's highly likely a category header
+                            if (/[a-zA-Z]/.test(lineText)) {
+                                currentCategory = lineText.toUpperCase();
+                            }
+                        }
+                    }
+                }
+                
+                // Commit to DB
+                if (catalog.length > 0) {
+                    db.catalog = catalog;
+                    db.categories = [...new Set(catalog.map(p => p.category))];
+                    saveDB();
+                    
+                    statusDiv.style.color = "var(--primary-color)";
+                    statusDiv.textContent = `¡Integración exitosa! Se cargaron ${catalog.length} productos y ${db.categories.length} categorías.`;
+                    
+                    // Switch back to catalog so they can immediately see it
+                    setTimeout(() => navigate('catalog'), 2000);
+                } else {
+                    statusDiv.style.color = "var(--danger-color)";
+                    statusDiv.textContent = '❌ No se detectaron productos. Revisa el formato del PDF.';
+                }
+            } catch (err) {
+                console.error(err);
+                statusDiv.style.color = "var(--danger-color)";
+                statusDiv.textContent = 'Error al leer el PDF: ' + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Procesar PDF (Extraer Datos)';
+                fileInput.value = ''; // Reset input
+            }
+        }
+
+        /* === Utilities === */
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+        });
+
+        async function installPWA() {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const isIframe = window !== window.parent;
+            
+            if (isIframe) {
+                showToast('Abre la app en una NUEVA PESTAÑA primero (botón arriba a la derecha).', '#4f4f4f');
+                return;
+            }
+
+            if (isIOS) {
+                showToast('En iPhone: Toca el botón compartir (⍗) en Safari y elige "Agregar a inicio".', '#4f4f4f');
+                return;
+            }
+
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                deferredPrompt = null;
+                if (outcome === 'accepted') {
+                    showToast('Instalación iniciada.', 'var(--success-color)');
+                }
+            } else {
+                showToast('Ve al menú del navegador (⋮) y selecciona "Instalar" o "Agregar a Inicio".', '#4f4f4f');
+            }
+        }
+
+        function clearData() {
+            localStorage.removeItem(DB_KEY);
+            db = { catalog: [], categories: [], cart: [], history: [], clients: [] };
+            saveDB();
+            showToast('Aplicación reiniciada correctamente.', 'var(--success-color)');
+            initApp();
+            navigate('settings');
+        }
+
+        // Initialize Application
+        window.addEventListener('DOMContentLoaded', initApp);
+
+    </script>
+</body>
+</html>
