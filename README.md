@@ -1,2 +1,0 @@
-# preventabelgrano
-ASAS
