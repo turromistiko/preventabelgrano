@@ -206,6 +206,15 @@
         }
         #catalog-list .product-card:active { transform: scale(0.98); }
 
+        .product-image {
+            width: 100%;
+            height: 90px;
+            object-fit: contain;
+            border-radius: 8px;
+            background-color: #ffffff;
+            margin-bottom: 4px;
+        }
+
         #cart-list .product-card {
             border-left: 4px solid var(--primary-color);
             margin-bottom: 8px;
@@ -494,6 +503,16 @@
         </div>
 
         <div class="card" style="margin-top: 30px;">
+            <h3>Cargar Imágenes (PDF Catálogo)</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
+                Sube el PDF que contiene las imágenes (ej: "Distribuidora Belgrano Corregido.pdf"). La app vinculará las imágenes con los productos ya cargados.
+            </p>
+            <input type="file" id="pdf-image-upload" accept="application/pdf">
+            <button class="btn" id="btn-process-img-pdf" onclick="processImagePDF()" style="background-color: var(--secondary-color); color: #000;">Extraer y Vincular Imágenes</button>
+            <p id="pdf-image-status" style="margin-top: 15px; color: var(--primary-color); font-size: 0.9rem; font-weight: bold;"></p>
+        </div>
+
+        <div class="card" style="margin-top: 30px;">
             <h3>Instalación</h3>
             <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
                 Agrega esta app a tu pantalla de inicio para usarla como una aplicación nativa.
@@ -597,6 +616,49 @@
             setTimeout(function(){ toast.className = toast.className.replace("show", ""); }, 3000);
         }
 
+        /* === IndexedDB for Images === */
+        const idbRequest = indexedDB.open('PreventaImagesDB', 1);
+        let imageDB = null;
+
+        idbRequest.onupgradeneeded = function(e) {
+            imageDB = e.target.result;
+            if (!imageDB.objectStoreNames.contains('images')) {
+                imageDB.createObjectStore('images');
+            }
+        };
+
+        idbRequest.onsuccess = function(e) {
+            imageDB = e.target.result;
+            // Re-render catalog to show images once DB is ready if needed
+            if (document.getElementById('view-catalog').classList.contains('active')) {
+                renderCatalogItems();
+            }
+        };
+
+        function saveProductImage(code, base64) {
+            if (!imageDB) return;
+            try {
+                const tx = imageDB.transaction('images', 'readwrite');
+                tx.objectStore('images').put(base64, code);
+            } catch(e) {
+                console.warn("Could not save image to IndexedDB", e);
+            }
+        }
+
+        async function getProductImage(code) {
+            if (!imageDB) return null;
+            return new Promise((resolve) => {
+                try {
+                    const tx = imageDB.transaction('images', 'readonly');
+                    const req = tx.objectStore('images').get(code);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => resolve(null);
+                } catch(e) {
+                    resolve(null);
+                }
+            });
+        }
+
         /* === App State Management === */
         const DB_KEY = 'preventa_database';
         let db = {
@@ -630,7 +692,22 @@
         }
 
         function saveDB() {
-            localStorage.setItem(DB_KEY, JSON.stringify(db));
+            try {
+                localStorage.setItem(DB_KEY, JSON.stringify(db));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+                    showToast('⚠️ Límite de almacenamiento alcanzado. Guardando sin imágenes.', 'var(--danger-color)');
+                    // Drop images from DB to fit quota
+                    db.catalog.forEach(p => delete p.image);
+                    db.cart.forEach(p => delete p.image);
+                    db.history.forEach(h => h.items.forEach(i => delete i.image));
+                    try {
+                        localStorage.setItem(DB_KEY, JSON.stringify(db));
+                    } catch (e2) {
+                        showToast('❌ Error crítico al guardar. Elimina datos antiguos.', 'var(--danger-color)');
+                    }
+                }
+            }
             updateCartBadge();
         }
 
@@ -730,8 +807,10 @@
 
             let html = '';
             itemsToRender.forEach(p => {
+                const imgHtml = `<img id="img-${p.code}" src="" class="product-image" loading="lazy" alt="${p.name}" style="display:none;">`;
                 html += `
                 <div class="card product-card">
+                    ${imgHtml}
                     <div class="product-info">
                         <span class="product-code">#${p.code}</span>
                         <h3 class="product-name">${p.name}</h3>
@@ -743,6 +822,18 @@
             });
             
             container.innerHTML = html;
+            
+            // Load images async
+            itemsToRender.forEach(async (p) => {
+                const base64 = await getProductImage(p.code);
+                if (base64) {
+                    const imgEl = document.getElementById(`img-${p.code}`);
+                    if (imgEl) {
+                        imgEl.src = base64;
+                        imgEl.style.display = 'block';
+                    }
+                }
+            });
             
             if (filtered.length > renderLimit) {
                 btnMore.style.display = 'block';
@@ -1081,7 +1172,7 @@
                                     code, 
                                     name: name.trim(), 
                                     price: price, 
-                                    category: currentCategory 
+                                    category: currentCategory
                                 });
                             }
                         } else if (lineText.length > 2 && lineText.length < 50 && !lineText.includes('#VALUE!') && !/^\d+/.test(lineText)) {
@@ -1102,8 +1193,23 @@
                     statusDiv.style.color = "var(--primary-color)";
                     statusDiv.textContent = `¡Integración exitosa! Se cargaron ${catalog.length} productos y ${db.categories.length} categorías.`;
                     
-                    // Switch back to catalog so they can immediately see it
-                    setTimeout(() => navigate('catalog'), 2000);
+                    // Auto link the images PDF if available in root
+                    setTimeout(async () => {
+                        statusDiv.style.color = "var(--text-muted)";
+                        statusDiv.textContent = 'Buscando PDF de imágenes ("Distribuidora Belgrano Corregido.pdf")...';
+                        try {
+                            const res = await fetch('/Distribuidora%20Belgrano%20Corregido.pdf');
+                            if (res.ok) {
+                                const arrBuf = await res.arrayBuffer();
+                                statusDiv.textContent = 'PDF encontrado, extrayendo imágenes...';
+                                await processImagePDF(arrBuf);
+                            } else {
+                                navigate('catalog');
+                            }
+                        } catch(e) {
+                            navigate('catalog');
+                        }
+                    }, 500);
                 } else {
                     statusDiv.style.color = "var(--danger-color)";
                     statusDiv.textContent = '❌ No se detectaron productos. Revisa el formato del PDF.';
@@ -1116,6 +1222,134 @@
                 btn.disabled = false;
                 btn.textContent = 'Procesar PDF (Extraer Datos)';
                 fileInput.value = ''; // Reset input
+            }
+        }
+
+        /* === PDF Image Processing Engine === */
+        async function processImagePDF(autoArrayBuffer = null) {
+            const fileInput = document.getElementById('pdf-image-upload');
+            const statusDiv = autoArrayBuffer ? document.getElementById('pdf-status') : document.getElementById('pdf-image-status');
+            const btn = autoArrayBuffer ? null : document.getElementById('btn-process-img-pdf');
+            
+            if (!autoArrayBuffer && (!fileInput || !fileInput.files.length)) {
+                showToast('⚠️ Selecciona un archivo PDF de imágenes primero.');
+                return;
+            }
+
+            if (db.catalog.length === 0) {
+                showToast('⚠️ Primero debes cargar el catálogo de texto.');
+                return;
+            }
+
+            let file;
+            if (!autoArrayBuffer) {
+                file = fileInput.files[0];
+                btn.disabled = true;
+                btn.textContent = 'Procesando Imágenes... (Por favor, espera)';
+            }
+            if (statusDiv) {
+                statusDiv.textContent = 'Iniciando lectura de PDF de imágenes...';
+                statusDiv.style.color = "var(--text-muted)";
+            }
+
+            try {
+                const arrayBuffer = autoArrayBuffer || await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                const totalPages = pdf.numPages;
+                
+                let totalImagenesGuardadas = 0;
+
+                for (let i = 1; i <= totalPages; i++) {
+                    statusDiv.textContent = `Procesando página ${i} de ${totalPages}...`;
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    
+                    // Render page to hidden canvas for image extraction
+                    const viewport = page.getViewport({ scale: 2.0 }); // High scale for better image quality
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    const ctx = canvas.getContext('2d');
+                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+                    // Group text elements mathematically by exact Y row axis with tolerance
+                    let linesMap = {};
+                    textContent.items.forEach(item => {
+                        let y = item.transform[5];
+                        let matchedY = Object.keys(linesMap).find(key => Math.abs(Number(key) - y) < 5);
+                        if (matchedY) {
+                            linesMap[matchedY].push({ x: item.transform[4], w: item.width, str: item.str });
+                        } else {
+                            linesMap[y] = [{ x: item.transform[4], w: item.width, str: item.str }];
+                        }
+                    });
+
+                    // For each found text, attempt to match it with catalog items and crop image
+                    for (let y in linesMap) {
+                        let lineItems = linesMap[y].sort((a,b) => a.x - b.x);
+                        // A line could have multiple items separated by big spaces (grid layout).
+                        // Let's iterate over each item (word/label).
+                        for (let item of lineItems) {
+                            const str = item.str.trim();
+                            if (!str || str.length < 3) continue;
+
+                            // Find match in catalog by substring
+                            let matchedProduct = db.catalog.find(p => p.name.toUpperCase().includes(str.toUpperCase()));
+                            
+                            if (matchedProduct) {
+                                // Extract image region directly ABOVE this text string
+                                let tx = item.x;
+                                let ty = Number(y);
+                                
+                                let canvasX = tx * viewport.scale;
+                                let canvasY = viewport.height - (ty * viewport.scale);
+                                
+                                // The image is typically above the text. Crop a decent square.
+                                let cropSize = 160 * viewport.scale; // 160px width/height at original pdf scale
+                                let startX = canvasX - (cropSize / 2) + ((item.w * viewport.scale) / 2);
+                                let startY = canvasY - cropSize - (10 * viewport.scale); // going up
+                                
+                                let thumbCanvas = document.createElement('canvas');
+                                thumbCanvas.width = 160;
+                                thumbCanvas.height = 160;
+                                let thumbCtx = thumbCanvas.getContext('2d');
+                                thumbCtx.fillStyle = '#ffffff'; // White bg
+                                thumbCtx.fillRect(0, 0, 160, 160);
+                                thumbCtx.drawImage(
+                                    canvas,
+                                    startX, startY, cropSize, cropSize,
+                                    0, 0, 160, 160
+                                );
+                                
+                                const base64 = thumbCanvas.toDataURL('image/jpeg', 0.6);
+                                saveProductImage(matchedProduct.code, base64);
+                                totalImagenesGuardadas++;
+                            }
+                        }
+                    }
+                }
+                
+                statusDiv.style.color = "var(--primary-color)";
+                statusDiv.textContent = `¡Proceso terminado! Se vincularon ~${totalImagenesGuardadas} imágenes.`;
+                setTimeout(() => {
+                    renderCatalogItems();
+                    navigate('catalog');
+                }, 2000);
+
+            } catch (err) {
+                console.error(err);
+                if (statusDiv) {
+                    statusDiv.style.color = "var(--danger-color)";
+                    statusDiv.textContent = 'Error al procesar: ' + err.message;
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Extraer y Vincular Imágenes';
+                }
+                if (!autoArrayBuffer && fileInput) {
+                    fileInput.value = '';
+                }
             }
         }
 
